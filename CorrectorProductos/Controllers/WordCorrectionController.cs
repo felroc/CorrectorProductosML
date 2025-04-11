@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
 
 namespace CorrectorProductos.Controllers
 {
@@ -19,14 +20,15 @@ namespace CorrectorProductos.Controllers
 
         [HttpGet]
         [Route("api/correct/{misspelledWord}")]
-        public IActionResult CorrectWord(string misspelledWord)
+        public async Task<IActionResult> CorrectWord(string misspelledWord)
         {
             if (string.IsNullOrEmpty(misspelledWord))
             {
                 return BadRequest("Please provide a misspelled word to be corrected.");
             }
 
-            var correctedWord = _wordCorrectionService.Predict(misspelledWord);
+            var correctedWord = await _wordCorrectionService.Predict(misspelledWord);
+
             return Ok(correctedWord);
         }
 

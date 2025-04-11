@@ -50,10 +50,11 @@ namespace CorrectorProductos
 				.Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
 			// entrenar desde la base de datos, desde un excel o cargar un modelo .zip
-			bool entrernar = false;
+			
 			bool zip = true;
 			bool excel = false;
 
+			bool entrernar = false;
             if (entrernar)
             {
                 // Configurar el Data Base Loader
@@ -62,7 +63,8 @@ namespace CorrectorProductos
                 // Connection String
                 //var connectionString = "Server=192.200.9.131;Database=DB_GENESIS_CENTRAL; User Id=sa; Password=bofasa1$; Encrypt=True; TrustServerCertificate=True;";
 
-                var sqlCommand = "SELECT CorrectWord, MisspelledWord  FROM [DB_GENESIS_CENTRAL].[dbo].ML_Productos WHERE ISNULL(Estado,'A') = 'A' ";
+                // EL ORDEN AFECTA VER EL ORDEN EN LA CLASE WordCorrection
+                var sqlCommand = "SELECT MisspelledWord, CorrectWord  FROM [DB_GENESIS_CENTRAL].[dbo].ML_Productos WHERE ISNULL(Estado,'A') = 'A' ";
 
                 // Script para obtener las palabras a partir de los productos
                 /*var sqlCommand = "SELECT " +
@@ -155,38 +157,40 @@ namespace CorrectorProductos
 
             var input = new WordCorrection { MisspelledWord = misspelledWord };
 
-			var prediction = _predictor.Predict(input);
+			var prediction =  _predictor.Predict(input);
 
+            //// Realizar las predicciones
+            //List<MyPrediction> predicciones = new List<MyPrediction>();
+            //foreach (var dato in datosEntrada)
+            //{
+            //    var prediction = predictionEngine.Predict(dato);
+            //    predicciones.Add(prediction);
+            //}
 
-			//// Realizar las predicciones
-			//List<MyPrediction> predicciones = new List<MyPrediction>();
-			//foreach (var dato in datosEntrada)
-			//{
-			//    var prediction = predictionEngine.Predict(dato);
-			//    predicciones.Add(prediction);
-			//}
+            //// Imprimir o utilizar las predicciones
+            //foreach (var prediccion in _predictor)
+            //{
+            //    Console.WriteLine($"Predicción: {prediccion.PredictedLabel}");
+            //}
 
+            int size = 4; // aspi
 
-			//// Imprimir o utilizar las predicciones
-			//foreach (var prediccion in _predictor)
-			//{
-			//    Console.WriteLine($"Predicción: {prediccion.PredictedLabel}");
-			//}
+            List<string> lst = new List<string>();
+			
+			string bitMisspelledWord = misspelledWord;
 
-			List<string> lst = new List<string>();
-			int size = 4; // aspi
-			string bitWord = misspelledWord;
 			if (misspelledWord.Length >= size)
 			{
-				bitWord = misspelledWord.Substring(0, size);
+				bitMisspelledWord = misspelledWord.Substring(0, size);
 			}
 
-			var res = await GetPalabras(bitWord);
+			var res = await GetPalabras(bitMisspelledWord);
 			lst.AddRange(res);
 
-			if (res.Count == 0)
+			//if (res.Count == 0)
 			{
-				res = await GetPalabras(prediction.PredictedWord);
+                string bitCorrectWord = prediction.PredictedWord.Substring(0, size);
+                res = await GetPalabras(bitCorrectWord);
 				lst.AddRange(res);
 			}
 
