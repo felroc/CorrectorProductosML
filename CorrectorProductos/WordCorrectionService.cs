@@ -9,52 +9,56 @@ using System.Linq;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Data;
+using System.Text.Json;
+using System.IO;
 
 namespace CorrectorProductos
 {
 
-	public class WordCorrection
-	{
-		[LoadColumn(0)]
-		public string MisspelledWord { get; set; }
+    public class WordCorrection
+    {
+        [LoadColumn(0)]
+        public string MisspelledWord { get; set; }
 
-		[LoadColumn(1)]
-		public string CorrectWord { get; set; }
-	}
+        [LoadColumn(1)]
+        public string CorrectWord { get; set; }
+    }
 
-	public class CorrectWordPrediction
-	{
-		[ColumnName("PredictedLabel")]
-		public string PredictedWord { get; set; }
-	}
+    public class CorrectWordPrediction
+    {
+        [ColumnName("PredictedLabel")]
+        public string PredictedWord { get; set; }
+    }
 
-	public class WordCorrectionService
-	{
-		private readonly MLContext _mlContext;
-		private readonly PredictionEngine<WordCorrection, CorrectWordPrediction> _predictor;
+    public class WordCorrectionService
+    {
+        private readonly MLContext _mlContext;
+        private readonly PredictionEngine<WordCorrection, CorrectWordPrediction> _predictor;
 
-		private readonly string stringConnection1;
-		private readonly string stringConnection2;
+        private readonly string stringConnection1;
+        private string stringConnection2;
 
-		public WordCorrectionService(string modelPath, string ExcelPath, string stringConnection1, string stringConnection2)
-		{
-			_mlContext = new MLContext();
-			this.stringConnection1 = stringConnection1;
-			this.stringConnection2 = stringConnection2;
+        public WordCorrectionService(string modelPath, string ExcelPath, string stringConnection1, string stringConnection2)
+        {
+            _mlContext = new MLContext();
+            this.stringConnection1 = stringConnection1;
+            this.stringConnection2 = stringConnection2;
 
-			// Crear ML Context            
-			var context = _mlContext.Transforms.Conversion
-				.MapValueToKey("Label", nameof(WordCorrection.CorrectWord))
-				.Append(_mlContext.Transforms.Text.FeaturizeText("Features", nameof(WordCorrection.MisspelledWord)))
-				.Append(_mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy())
-				.Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+            // Crear ML Context            
+            var context = _mlContext.Transforms.Conversion
+                .MapValueToKey("Label", nameof(WordCorrection.CorrectWord))
+                .Append(_mlContext.Transforms.Text.FeaturizeText("Features", nameof(WordCorrection.MisspelledWord)))
+                .Append(_mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy())
+                .Append(_mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-			// entrenar desde la base de datos, desde un excel o cargar un modelo .zip
-			
-			bool zip = true;
-			bool excel = false;
+            // entrenar desde la base de datos, desde un excel o cargar un modelo .zip
 
-			bool entrernar = false;
+            bool zip = true;
+            bool excel = false;
+
+            /////////////////////////////////////////////////////////////////////////////////
+
+            bool entrernar = true;
             if (entrernar)
             {
                 // Configurar el Data Base Loader
@@ -64,7 +68,10 @@ namespace CorrectorProductos
                 //var connectionString = "Server=192.200.9.131;Database=DB_GENESIS_CENTRAL; User Id=sa; Password=bofasa1$; Encrypt=True; TrustServerCertificate=True;";
 
                 // EL ORDEN AFECTA VER EL ORDEN EN LA CLASE WordCorrection
-                var sqlCommand = "SELECT MisspelledWord, CorrectWord  FROM [DB_GENESIS_CENTRAL].[dbo].ML_Productos WHERE ISNULL(Estado,'A') = 'A' ";
+                var sqlCommand = "SELECT MisspelledWord, CorrectWord " +
+                    " FROM DB_GENESIS_CENTRAL.dbo.Productos_ML1 " + // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+                    " WHERE ISNULL(Estado,'A') = 'A' " +
+                    " ; "; // -- AND MODIF IS NULL 
 
                 // Script para obtener las palabras a partir de los productos
                 /*var sqlCommand = "SELECT " +
@@ -100,25 +107,25 @@ namespace CorrectorProductos
                 _predictor = _mlContext.Model.CreatePredictionEngine<WordCorrection, CorrectWordPrediction>(model);
             }
 
-			// ----------------------------------------------------------------------------------------------------------------------
+            // ----------------------------------------------------------------------------------------------------------------------
 
-			if (zip)
-			{
-				if (!File.Exists(modelPath))
-				{
+            if (zip)
+            {
+                if (!File.Exists(modelPath))
+                {
                     Console.WriteLine($"Modelo no encontrado en la ruta: {modelPath}");
                     throw new FileNotFoundException($"Modelo no encontrado en la ruta: {modelPath}");
-				}
+                }
 
-				// Cargar el modelo
-				var model = _mlContext.Model.Load(modelPath, out _);
+                // Cargar el modelo
+                var model = _mlContext.Model.Load(modelPath, out _);
 
-				if (model != null)
-				{
-					// INIT Prediction Engine 
-					_predictor = _mlContext.Model.CreatePredictionEngine<WordCorrection, CorrectWordPrediction>(model);
-				}
-			}
+                if (model != null)
+                {
+                    // INIT Prediction Engine 
+                    _predictor = _mlContext.Model.CreatePredictionEngine<WordCorrection, CorrectWordPrediction>(model);
+                }
+            }
 
             // ----------------------------------------------------------------------------------------------------------------------
 
@@ -150,157 +157,246 @@ namespace CorrectorProductos
 
         }
 
-        public async Task<List<string>> Predict(string misspelledWord)
-		{            
-			//Aun esta en desarrollo y requeriere una nueva tabla que solo tengo localhost 
-            //GuardarPalabra(misspelledWord); //await GuardarPalabra(misspelledWord); el await genera error extraño
 
-            var input = new WordCorrection { MisspelledWord = misspelledWord };
+        public async Task<List<string>> Predict(string pMisspelledWord)
+        {
+            List<string> output = new List<string>();
 
-			var prediction =  _predictor.Predict(input);
+            string[] array = pMisspelledWord.Split(' ');
 
-            //// Realizar las predicciones
-            //List<MyPrediction> predicciones = new List<MyPrediction>();
-            //foreach (var dato in datosEntrada)
-            //{
-            //    var prediction = predictionEngine.Predict(dato);
-            //    predicciones.Add(prediction);
-            //}
+            if (array.Length == 1)
+            {
+                string misspelledWord = array.Length > 0 ? array[0] : pMisspelledWord;
 
-            //// Imprimir o utilizar las predicciones
-            //foreach (var prediccion in _predictor)
-            //{
-            //    Console.WriteLine($"Predicción: {prediccion.PredictedLabel}");
-            //}
+                output.AddRange(await PredictListWords(misspelledWord));
 
-            int size = 4; // aspi
-
-            List<string> lst = new List<string>();
-			
-			string bitMisspelledWord = misspelledWord;
-
-			if (misspelledWord.Length >= size)
-			{
-				bitMisspelledWord = misspelledWord.Substring(0, size);
-			}
-
-			var res = await GetPalabras(bitMisspelledWord);
-			lst.AddRange(res);
-
-			//if (res.Count == 0)
-			{
-                string bitCorrectWord = prediction.PredictedWord.Substring(0, size);
-                res = await GetPalabras(bitCorrectWord);
-				lst.AddRange(res);
-			}
-
-			if (!lst.Contains(prediction.PredictedWord))
-			{
-				lst.Add(prediction.PredictedWord);
-			}
-
-			return lst;
-		}
-
-
-
-
-		public async Task<List<string>> GetPalabras(string word)
-		{
-			List<string> list = new List<string>();
-			SqlConnection conn = new SqlConnection(stringConnection1);
-			try
-			{
-				// Database=DB_GENESIS_CENTRAL;                 
-
-				conn.Open();
-
-				//Consulta a base de datos 1
-				string queryString = $"SP_GetPalabras";
-
-				SqlCommand cmd2;
-
-				DataTable dt1 = new DataTable();
-
-				SqlCommand cmd = new SqlCommand(queryString, conn);
-				if (cmd != null)
-				{
-					cmd.CommandType = CommandType.StoredProcedure;
-
-					cmd.Parameters.AddWithValue("@str", word);
-
-					SqlDataAdapter da = new SqlDataAdapter(cmd);
-					da.Fill(dt1);
-
-					foreach (DataRow row in dt1.Rows)
-					{
-						string str = row.ItemArray[0].ToString();
-						list.Add(str);
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine(ex.Message);
-			}
-			finally
-			{
-				conn.Close();
-			}
-
-			return list;
-		}
-
-		public async void GuardarPalabra(string word)
-		{
-			SqlConnection conn = new SqlConnection(stringConnection2);
-			try
-			{				
-				conn.Open();
-
-                // Consulta a base de datos 1
-                // cambiar a DB_GENESIS_CENTRAL;                 
-                string queryString = $"Select isnull(sum(Cantidad),0) Cantidad from db.dbo.Corrector where palabra = '{word}'; ";
-
-				SqlCommand cmd2;
-
-				using (SqlCommand cmd = new SqlCommand(queryString, conn))
-				{
-					object? result = await cmd.ExecuteScalarAsync();
-
-					int count;
-
-					int.TryParse(result?.ToString(), out count);
-
-					if (count == 0)
-					{
-						queryString = $"Insert into db.dbo.Corrector values( '{word}', 1 )";
-						cmd2 = new SqlCommand(queryString, conn);
-					}
-					else
-					{
-						queryString = $"Update db.dbo.Corrector set Cantidad = {count + 1} where palabra = '{word}'; ";
-						cmd2 = new SqlCommand(queryString, conn);
-					}
-
-					result = await cmd2.ExecuteScalarAsync();
-				}
-
-				//return true;
-				return;
+                return output;
             }
-			catch (Exception ex)
-			{
-				Console.WriteLine(ex.Message);
+            else
+            {
+                string line = string.Empty;
 
-				//return false;
-				return;
-			}
-			finally
-			{
-				conn.Close();
-			}
-		}
-	}
+                for (int i = 0; i < array.Length; i++)
+                {
+                    line += await PredictWord(array[i]) + " ";
+                }
+
+                output.Add(line);
+            }
+
+            return output;
+        }
+
+        public async Task<string> PredictWord(string misspelledWord)
+        {
+            string output = string.Empty;
+
+            int size = 4; // ASPI
+
+            // OMITIR CODIGOS DE BARRAS Y NUMEROS 
+            string strNum= misspelledWord;
+            if (misspelledWord.ToUpper().StartsWith("P"))
+            {
+                strNum = misspelledWord.ToUpper().Replace("P", "").Replace("A", "");                
+            }
+            long num;
+            bool isNum = long.TryParse(strNum, out num);
+            if (isNum)
+            {
+                return output;
+            }
+
+            // Busca si la palabra COMPLETA hace match en la DB
+            var lstMatch = await GetPalabras(misspelledWord);
+            if (lstMatch.Count == 1)
+            {
+                output = lstMatch.FirstOrDefault();
+            }
+            else // Predecir la palabra
+            {
+                if (misspelledWord.Length < size) // SE REQUIEREN AL MENOS 4 LETRAS 
+                {
+                    output = misspelledWord;
+                    return output;
+                }
+                else // Predicir la palabra con base al entrenamiento
+                {
+                    var input = new WordCorrection { MisspelledWord = misspelledWord };
+                    var prediction = _predictor.Predict(input);
+
+                    output = prediction.PredictedWord;
+                }
+            }
+
+            string jsonString = JsonSerializer.Serialize(output);
+
+            string res = await GuardarPalabra(misspelledWord, jsonString); // DB FARMA_APP TBL TopPalabras
+
+            return output;
+        }
+
+
+        public async Task<List<string>> PredictListWords(string misspelledWord)
+        {
+            List<string> lstOutput = new List<string>();
+            List<string> lstMatch = new List<string>();
+
+            int size = 4; // ASPI
+
+            // OMITIR CODIGOS DE BARRAS Y NUMEROS 
+            string strNum= misspelledWord;
+            if (misspelledWord.ToUpper().StartsWith("P"))
+            {
+                strNum = misspelledWord.ToUpper().Replace("P", "").Replace("A", "");               
+            }
+            long num;
+            bool isNum = long.TryParse(strNum, out num);
+            if (isNum)
+            {
+                return lstOutput;
+            }
+
+            // Busca si la palabra completa hce match en la DB
+            var match = await GetPalabras(misspelledWord);
+            if (match.Count == 1)
+            {
+                lstOutput.AddRange(match);
+            }
+            else // Predecir la palabra
+            {
+                if (misspelledWord.Length < size) // SE REQUIEREN AL MENOS 4 LETRAS 
+                {
+                    // output.Add(misspelledWord); // OMITIR
+                    return lstOutput;
+                }
+                else // Predicir la palabra con base al entrenamiento
+                {
+                    var input = new WordCorrection { MisspelledWord = misspelledWord };
+                    var prediction = _predictor.Predict(input);
+
+                    // Si la palabra no está CONTENIDA en la prediccion
+                    if (!prediction.PredictedWord.ToUpper().Contains(misspelledWord.ToUpper()))
+                    {
+                        // Buscar si la palabra está CONTENIDA %% en la base de datos
+                        lstMatch = await GetPalabras($"%{misspelledWord}%");
+                        lstOutput.AddRange(lstMatch);
+                    }
+
+                    // Si no hay match en la db de la palabra ingresada
+                    if (lstOutput.Count == 0)
+                    {
+                        lstMatch = await GetPalabras($"%{prediction.PredictedWord}%");
+                        lstOutput.AddRange(lstMatch);
+                    }
+
+                    // Por ultimo
+                    // SE AGREGA LA PREDICCION PARA TENER CONTROL
+                    // SI SE AGREGA O SI YA FUE AGREGADA CUANDO SE BUSCO EL MATCH EN LA DB
+                    if (!lstOutput.Contains(prediction.PredictedWord))
+                    {
+                        lstOutput.Insert(0, prediction.PredictedWord);
+                    }
+
+                    lstOutput.AddRange(lstMatch);
+                }
+            }
+
+            var output = lstOutput.Distinct().ToList(); // Quitar duplicados
+
+            string jsonString = JsonSerializer.Serialize(output);
+
+            string res = await GuardarPalabra(misspelledWord, jsonString); // DB FARMA_APP TBL TopPalabras
+
+            return output;
+        }
+
+        /// <summary>
+        /// Busca en la base de datos
+        /// </summary>
+        /// <param name="word"></param>
+        /// <returns></returns>
+        public async Task<List<string>> GetPalabras(string word)
+        {
+            List<string> list = new List<string>();
+
+            SqlConnection conn = new SqlConnection(stringConnection1);
+            try
+            {
+                conn.Open();
+
+                //Consulta a base de datos 1
+                string queryString = $"SP_GetPalabras";
+
+                DataTable dt1 = new DataTable();
+
+                SqlCommand cmd = new SqlCommand(queryString, conn);
+                if (cmd != null)
+                {
+                    cmd.CommandType = CommandType.StoredProcedure;
+                    cmd.Parameters.AddWithValue("@str", word);
+
+                    SqlDataAdapter da = new SqlDataAdapter(cmd);
+                    da.Fill(dt1);
+
+                    foreach (DataRow row in dt1.Rows)
+                    {
+                        string str = row.ItemArray[0].ToString();
+                        list.Add(str);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+            finally
+            {
+                conn.Close();
+            }
+
+            return list;
+        }
+
+
+        public async Task<string> GuardarPalabra(string word, string output)
+        {
+            List<string> list = new List<string>();
+
+            SqlConnection conn = new SqlConnection(stringConnection1);
+            try
+            {
+                int count;
+
+                conn.Open();
+
+                // Inserta o actualiza el contador de palabras 
+                string queryString = $"FARMA_APP.dbo.SP_GuardarPalabra";
+
+                using (SqlCommand cmd = new SqlCommand(queryString, conn))
+                {
+                    cmd.CommandType = CommandType.StoredProcedure;
+                    cmd.Parameters.AddWithValue("@word", word);
+                    cmd.Parameters.AddWithValue("@output", output);
+
+                    // Devuelve el numero de filas afectas 
+                    object? result = await cmd.ExecuteNonQueryAsync();
+
+                    int.TryParse(result?.ToString(), out count);
+                }
+
+                return (count > 1 ? "OK" : "GuardarPalabras> Error en el stored procedure.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                return $"GuardarPalabras> {ex.Message}";
+            }
+            finally
+            {
+                conn.Close();
+            }
+        }
+
+    }
 
 }

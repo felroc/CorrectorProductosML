@@ -7,11 +7,11 @@ var modelPath = Path.Combine(AppContext.BaseDirectory, "wordCorrectionModel.zip"
 var excelPath = Path.Combine(AppContext.BaseDirectory, "productos.csv");
 
 
-var stringConnection1 = "Server=192.200.9.131; user=sa; password=bofasa1$; Min Pool Size=10;Max Pool Size=30; Integrated Security=False; Trust Server Certificate=true;";
-var stringConnection2 = "Server=.\\sqlexpress; user=sa; password=Pruebas123; Min Pool Size=10;Max Pool Size=30; Integrated Security=False; Trust Server Certificate=true;";
+var stringConnection1 = @"Server=192.200.9.131; user=sa; password=bofasa1$; Min Pool Size=10;Max Pool Size=30; Integrated Security=False; Trust Server Certificate=true;";
+var stringConnection2 = @"Server=.\sqlexpress; user=sa; password=Pruebas123; Min Pool Size=10;Max Pool Size=30; Integrated Security=False; Trust Server Certificate=true;";
 
 
-// Agregar el servicio a DI
+// Agregar el servicio 
 builder.Services.AddSingleton(new WordCorrectionService(modelPath, excelPath, stringConnection1, stringConnection2));
 
 // en launchSetting.json

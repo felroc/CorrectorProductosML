@@ -38,7 +38,9 @@ namespace CorrectorProductos.Controllers
         public IActionResult Predict([FromBody] WordCorrectionRequest request)
         {
             if (string.IsNullOrEmpty(request.MisspelledWord))
-                return BadRequest("La palabra mal escrita es requerida.");
+            {
+                return BadRequest("Please provide a misspelled word to be corrected.");
+            }
 
             var correctedWord = _wordCorrectionService.Predict(request.MisspelledWord);
             return Ok(new { CorrectedWord = correctedWord });
