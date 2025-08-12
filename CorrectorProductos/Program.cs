@@ -15,7 +15,7 @@ var stringConnection2 = @"Server=.\sqlexpress; user=sa; password=Pruebas123; Min
 builder.Services.AddSingleton(new WordCorrectionService(modelPath, excelPath, stringConnection1, stringConnection2));
 
 // en launchSetting.json
-// "launchUrl": "api/correct/aseta",
+// "launchUrl": "api/correct/pedialit",
 
 // Add services to the container.
 
