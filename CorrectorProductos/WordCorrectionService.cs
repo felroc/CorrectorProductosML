@@ -149,6 +149,8 @@ namespace CorrectorProductos
         {
             List<string> output = new List<string>();
 
+            pMisspelledWord = pMisspelledWord.Trim();
+
             string[] array = pMisspelledWord.Split(' ');
 
             if (array.Length == 1)
@@ -178,30 +180,20 @@ namespace CorrectorProductos
         {
             string output = string.Empty;
 
-            int size = 4; // ASPI
-            if (misspelledWord.Length < size) // SE REQUIEREN AL MENOS 4 LETRAS PARA PREDECIR
+            // Omitir códigos de barras y cadenas que contengan numeros             
+            bool flagNum = misspelledWord.Any(char.IsDigit);
+            if (flagNum)
             {
-                output = misspelledWord;
-                return output;
+                // No guardar
+                return misspelledWord;
             }
 
-            if (misspelledWord.EndsWith("ml") || misspelledWord.EndsWith("mg"))
+            int size = 4;
+            // Omitir palabras de tamaño menor a 4 caracteres
+            // Se requieren al menos 4 caracteres para una buena predicción
+            if (misspelledWord.Length < size)
             {
-                output = misspelledWord;
-                return output;
-            }
-
-            // OMITIR CODIGOS DE BARRAS Y NUMEROS 
-            string strNum = misspelledWord;
-            if (misspelledWord.ToUpper().StartsWith("P"))
-            {
-                strNum = misspelledWord.ToUpper().Replace("P", "").Replace("A", "");
-            }
-            long num;
-            bool isNum = long.TryParse(strNum, out num);
-            if (isNum)
-            {
-                return output;
+                return misspelledWord;
             }
 
             // Busca si la palabra COMPLETA hace match en la DB
@@ -210,19 +202,23 @@ namespace CorrectorProductos
             {
                 output = lstMatch.FirstOrDefault();
             }
-            else // Predecir la palabra
+            else
             {
-
                 // Predicir la palabra con base al entrenamiento
-
                 var input = new WordCorrection { MisspelledWord = misspelledWord };
                 var prediction = _predictor.Predict(input);
 
                 output = prediction.PredictedWord;
-
             }
 
-            string jsonString = JsonSerializer.Serialize(output);
+            // Conserva las tildes y ñ
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                WriteIndented = false,
+            };
+
+            string jsonString = JsonSerializer.Serialize(output, options);
 
             string res = await GuardarPalabra(misspelledWord, output); // DB FARMA_APP TBL TopPalabras
 
@@ -235,30 +231,21 @@ namespace CorrectorProductos
             List<string> lstOutput = new List<string>();
             List<string> lstMatch = new List<string>();
 
-            int size = 4; // ASPI
+            // Omitir códigos de barras y cadenas que contengan numeros             
+            bool flagNum = misspelledWord.Any(char.IsDigit);
+            if (flagNum)
+            {
+                // No guardar
+                lstOutput.Add(misspelledWord);
+                return lstOutput;
+            }
+
+            int size = 4;
+            // Omitir palabras de tamaño menor a 4 caracteres
+            // Se requieren al menos 4 caracteres para una buena predicción
             if (misspelledWord.Length < size) // SE REQUIEREN AL MENOS 4 LETRAS 
             {
-                lstOutput.Add(misspelledWord); 
-                return lstOutput;
-            }
-
-            if (misspelledWord.EndsWith("ml") || misspelledWord.EndsWith("mg"))
-            {
-                lstOutput.Add( misspelledWord);
-                return lstOutput;
-            }
-
-            // OMITIR CODIGOS DE BARRAS Y NUMEROS 
-            string strNum = misspelledWord;
-            if (misspelledWord.ToUpper().StartsWith("P"))
-            {
-                strNum = misspelledWord.ToUpper().Replace("P", "").Replace("A", "");
-            }
-
-            long num;
-            bool isNum = long.TryParse(strNum, out num);
-            if (isNum)
-            {
+                lstOutput.Add(misspelledWord);
                 return lstOutput;
             }
 
@@ -268,45 +255,41 @@ namespace CorrectorProductos
             {
                 lstOutput.AddRange(match);
             }
-            else // Predecir la palabra
+            else
             {
                 // Predicir la palabra con base al entrenamiento
-
                 var input = new WordCorrection { MisspelledWord = misspelledWord };
                 var prediction = _predictor.Predict(input);
 
-                // Si la palabra no está CONTENIDA en la prediccion
+                // Autocompletar basado en la palabra ingresada: !Aspi => Aspirina
                 if (!prediction.PredictedWord.ToUpper().Contains(misspelledWord.ToUpper()))
                 {
-                    // Buscar si la palabra está CONTENIDA %% en la base de datos
                     lstMatch = await GetPalabras($"%{misspelledWord}%");
                     lstOutput.AddRange(lstMatch);
                 }
 
-                // Si no hay match en la db de la palabra ingresada
-                if (lstOutput.Count == 0)
+                // Autocompletar basado en la predicción                
+                //if (lstOutput.Count == 0)
                 {
                     lstMatch = await GetPalabras($"%{prediction.PredictedWord}%");
                     lstOutput.AddRange(lstMatch);
                 }
 
-                // Por ultimo
-                // SE AGREGA LA PREDICCION PARA TENER CONTROL
-                // SI SE AGREGA O SI YA FUE AGREGADA CUANDO SE BUSCO EL MATCH EN LA DB
-                if (!lstOutput.Contains(prediction.PredictedWord))
+                //// SE AGREGA LA PREDICCION 
+                //if (!lstOutput.Contains(prediction.PredictedWord))
                 {
                     lstOutput.Insert(0, prediction.PredictedWord);
                 }
 
                 lstOutput.AddRange(lstMatch);
-
             }
 
             var output = lstOutput.Distinct().ToList(); // Quitar duplicados
 
+            // Conserva las tildes y ñ
             var options = new JsonSerializerOptions
-            {                
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,                
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
                 WriteIndented = false,
             };
 
@@ -317,39 +300,48 @@ namespace CorrectorProductos
             return output;
         }
 
+
         /// <summary>
         /// Busca en la base de datos
         /// </summary>
-        /// <param name="word"></param>
-        /// <returns></returns>
-        public async Task<List<string>> GetPalabras(string word)
+        public async Task<List<string>> GetPalabras(string word)        
         {
             List<string> list = new List<string>();
 
             SqlConnection conn = new SqlConnection(stringConnection1);
             try
             {
-                conn.Open();
+                await conn.OpenAsync();
 
                 //Consulta a base de datos 1
-                string queryString = $"SP_GetPalabras";
+                string query = $"SP_GetPalabras";
 
-                DataTable dt1 = new DataTable();
+                DataTable dt = new DataTable();
 
-                SqlCommand cmd = new SqlCommand(queryString, conn);
+                SqlCommand cmd = new SqlCommand(query, conn);
                 if (cmd != null)
                 {
                     cmd.CommandType = CommandType.StoredProcedure;
                     cmd.Parameters.AddWithValue("@str", word);
 
-                    SqlDataAdapter da = new SqlDataAdapter(cmd);
-                    da.Fill(dt1);
+                    using var reader = await cmd.ExecuteReaderAsync(); 
 
-                    foreach (DataRow row in dt1.Rows)
+                    while (await reader.ReadAsync()) 
                     {
-                        string str = row.ItemArray[0].ToString();
-                        list.Add(str);
+                        list.Add(reader.GetString(0));
                     }
+                    
+                    //SqlDataAdapter da = new SqlDataAdapter(cmd);
+                    //da.Fill(dt);
+                    //foreach (DataRow row in dt.Rows)
+                    //{
+                    //    string str = row.ItemArray[0].ToString();
+                    //    list.Add(str);
+                    //}
+                }
+                else
+                {
+                    Console.WriteLine($"Error en el query: {query}");
                 }
             }
             catch (Exception ex)
